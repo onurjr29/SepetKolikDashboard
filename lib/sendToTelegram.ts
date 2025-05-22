@@ -13,14 +13,16 @@ export type ProductRow = {
 };
 
 /**
- * Telegram'a fotoğraf URL'si ile gönderim yapar.
- * Her ürün için ayrı try/catch. Gönderim cevabını loglar.
+ * Telegram'a fotoğraf ile gönderim yapar.
+ * Her ürün için ayrı try/catch ve rate-limit gecikmesi içerir.
  */
 export const sendToTelegramWithImage = async (
   products: ProductRow[],
   botToken: string,
   chatId: string
 ): Promise<void> => {
+
+
   const endpoint = `https://api.telegram.org/bot${botToken}/sendPhoto`;
 
   for (const product of products) {
@@ -29,16 +31,21 @@ export const sendToTelegramWithImage = async (
       continue;
     }
 
-    const caption = `
-<b>${product.name}</b>
-Brand: ${product.brand}
-Original Price: ${product.original_price}
-Discounted Price: ${product.discounted_price}
-Discount Percent: ${product.discount_percent}
-Rating: ${product.rating}
-Kategori: ${product.kategori}
-URL: ${product.url}
-`;
+    // Caption oluşturma
+    const captionLines: string[] = [];
+    captionLines.push(`<b>${product.name}</b>`);
+    captionLines.push(`Brand: ${product.brand}`);
+    if (product.original_price) {
+      captionLines.push(`Original Price: ${product.original_price}`);
+    }
+    captionLines.push(`Discounted Price: ${product.discounted_price}`);
+    captionLines.push(`Discount Percent: ${product.discount_percent}%`);
+    if (product.rating) {
+      captionLines.push(`Rating: ${product.rating}`);
+    }
+    captionLines.push(`Kategori: ${product.kategori}`);
+    captionLines.push(`URL: ${product.url}`);
+    const caption = captionLines.join("\n");
 
     const payload = {
       chat_id: chatId,
@@ -48,36 +55,31 @@ URL: ${product.url}
     };
 
     try {
-      console.debug("Sending to Telegram:", payload);
+      console.debug("Sending photo to Telegram", product.name);
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-      const text = await response.text();
-      let data: any;
-      try {
-        data = JSON.parse(text);
-      } catch {
-        console.error("Telegram invalid JSON response", text);
-        continue;
-      }
-
+      const data = await response.json();
       if (!response.ok || !data.ok) {
-        console.error("Telegram API Error:", data || text);
+        console.error(
+          `Telegram API Error for "${product.name}":`,
+          data.description || data
+        );
         continue;
       }
 
       console.info(
-        `Sent "${product.name}" as message_id=${data.result.message_id}`
+        `Sent "${product.name}" message_id=${data.result.message_id}`
       );
     } catch (err) {
       console.error(`Error sending "${product.name}":`, err);
-      // continue to next product
+      // Hata durumunda devam et
     }
 
-    // Rate limit önlemi
+    // Rate-limit önlemi (500ms)
     await new Promise((r) => setTimeout(r, 500));
   }
 };
